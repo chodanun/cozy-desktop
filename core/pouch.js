@@ -130,7 +130,7 @@ class Pouch {
       const {local, remote} = doc.sides || {}
       log.debug({path, local, remote, _deleted: doc._deleted, doc}, 'Saving bulk metadata...')
     }
-    const results = await this.db.bulkDocs(docs)
+    const results = await this.db.bulkDocs(docs, {force: true})
     for (let [idx, result] of results.entries()) {
       if (result.error) {
         const err = new Error(result.message)
