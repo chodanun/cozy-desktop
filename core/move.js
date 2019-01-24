@@ -40,9 +40,5 @@ function move (src /*: Metadata */, dst /*: Metadata */) {
 function child (src /*: Metadata */, dst /*: Metadata */) {
   src.childMove = true
   move(src, dst)
-
-  // TODO: Find out why _rev is removed only from child move destinations and
-  // explain it here. Or in case it would make sense, move it to the move()
-  // function above.
-  delete dst._rev
+  dst._rev = '0'
 }
