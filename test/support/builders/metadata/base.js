@@ -183,12 +183,12 @@ module.exports = class BaseMetadataBuilder {
     return _.cloneDeep(this.doc)
   }
 
-  async create () /*: Promise<Metadata> */ {
+  async create (opts /*: ?{force: true} */ = {}) /*: Promise<Metadata> */ {
     const doc = this.build()
     if (this.pouch == null) {
       throw new Error('Cannot create dir metadata without Pouch')
     }
-    const { rev } = await this.pouch.put(doc)
+    const { rev } = await this.pouch.db.put(doc, opts)
     doc._rev = rev
     return doc
   }
