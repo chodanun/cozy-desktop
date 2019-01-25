@@ -11,8 +11,7 @@ import type { Metadata } from '../../../../core/metadata'
 
 module.exports = class FileMetadataBuilder extends BaseMetadataBuilder {
   constructor (pouch /*: ?Pouch */, old /*: ?Metadata */) {
-    super(pouch, old)
-    this.doc.docType = 'file'
+    super(pouch, 'file', old)
     this.data('')
   }
 

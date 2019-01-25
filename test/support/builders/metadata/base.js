@@ -11,6 +11,7 @@ const dbBuilders = require('../db')
 /*::
 import type fs from 'fs-extra'
 import type {
+  DocType,
   Metadata,
   MetadataRemoteInfo,
   MetadataSidesInfo,
@@ -20,6 +21,8 @@ import type Pouch from '../../../../core/pouch'
 import type { RemoteDoc } from '../../../../core/remote/document'
 */
 
+let nextNumber = 1
+
 module.exports = class BaseMetadataBuilder {
   /*::
   pouch: ?Pouch
@@ -27,16 +30,17 @@ module.exports = class BaseMetadataBuilder {
   old: ?Metadata
   */
 
-  constructor (pouch /*: ?Pouch */, old /*: ?Metadata */) {
+  constructor (pouch /*: ?Pouch */, docType /*: DocType */, old /*: ?Metadata */) {
     this.pouch = pouch
     if (old) {
       this.old = old
       this.doc = _.cloneDeep(old)
     } else {
+      const path = `test-${docType}-${nextNumber++}`
       this.doc = {
-        _id: metadata.id('foo'),
-        docType: 'folder', // To make flow happy (overridden by subclasses)
-        path: 'foo',
+        _id: metadata.id(path),
+        docType,
+        path,
         remote: {
           _id: dbBuilders.id(),
           _rev: dbBuilders.rev()
