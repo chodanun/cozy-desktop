@@ -118,6 +118,7 @@ module.exports = {
   sameFileIgnoreRev,
   sameBinary,
   markSide,
+  markSides,
   wasSynced,
   buildDir,
   buildFile,
@@ -448,6 +449,19 @@ function markSide (side /*: string */, doc /*: Metadata */, prev /*: ?Metadata *
     doc.sides = clone(was || {})
   }
   doc.sides[side] = ++rev
+  return doc
+}
+
+function markSides (doc /*: Metadata */) /*: Metadata */ {
+  if (doc.sides == null) {
+    doc.sides = { local: 1, remote: 1 }
+  } else {
+    const { local, remote } = doc.sides
+    doc.sides = {
+      local: local + 1,
+      remote: remote + 1
+    }
+  }
   return doc
 }
 
