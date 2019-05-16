@@ -13,6 +13,7 @@ const {
 } = require('./path_restrictions')
 const { DIR_TYPE, FILE_TYPE } = require('./remote/constants')
 const timestamp = require('./timestamp')
+const { otherSide } = require('./side')
 
 const fsutils = require('./utils/fs')
 /*::
@@ -334,9 +335,9 @@ function extractRevNumber(doc /*: Metadata|{_rev: string} */) {
 
 // Return true if the remote file is up-to-date for this document
 function isUpToDate(side /*: SideName */, doc /*: Metadata */) {
-  let currentRev = doc.sides[side] || 0
-  let lastRev = extractRevNumber(doc)
-  return currentRev === lastRev
+  const sideRev = doc.sides[side] || 0
+  const otherSideRev = doc.sides[otherSide(side)] || 0
+  return sideRev >= otherSideRev
 }
 
 function isAtLeastUpToDate(side /*: SideName */, doc /*: Metadata */) {
@@ -356,10 +357,8 @@ function markAsNew(doc /*: Metadata */) {
 }
 
 function markAsUpToDate(doc /*: Metadata */) {
-  let rev = extractRevNumber(doc) + 1
-  for (let s of ['local', 'remote']) {
-    doc.sides[s] = rev
-  }
+  let rev = Math.max(doc.sides['local'] || 0, doc.sides['remote'] || 0) + 1
+  doc.sides['local'] = doc.sides['remote'] = rev
   delete doc.errors
   return rev
 }
@@ -506,15 +505,11 @@ function markSide(
   doc /*: Metadata */,
   prev /*: ?Metadata */
 ) /*: Metadata */ {
-  let rev = 0
-  if (prev) {
-    rev = extractRevNumber(prev)
-  }
+  const prevSides = prev && prev.sides
   if (doc.sides == null) {
-    const was = prev && prev.sides
-    doc.sides = clone(was || {})
+    doc.sides = clone(prevSides) || {}
   }
-  doc.sides[side] = ++rev
+  doc.sides[side] = prevSides ? prevSides[side] + 1 : 1
   return doc
 }
 

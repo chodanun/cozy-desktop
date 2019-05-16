@@ -2,7 +2,6 @@
 
 const autoBind = require('auto-bind')
 const _ = require('lodash')
-const { clone } = _
 const path = require('path')
 
 const IdConflict = require('./IdConflict')
@@ -446,8 +445,8 @@ class Merge {
     )
 
     for (let doc of docs) {
-      let src = clone(doc)
-      let dst = clone(doc)
+      let src = _.cloneDeep(doc)
+      let dst = _.cloneDeep(doc)
       dst._id = makeDestinationID(doc)
       dst.path = doc.path.replace(was.path, folder.path)
       if (src.sides && src.sides[side] && !src.sides[otherSide(side)]) {
@@ -539,7 +538,7 @@ class Merge {
       return this.pouch.put(oldMetadata)
     }
     delete oldMetadata.errors
-    const newMetadata = clone(oldMetadata)
+    const newMetadata = _.cloneDeep(oldMetadata)
     metadata.markSide(side, newMetadata, oldMetadata)
     newMetadata._id = doc._id
     newMetadata._rev = doc._rev
@@ -658,7 +657,9 @@ class Merge {
     for (let doc of Array.from(docs)) {
       if (
         toPreserve.has(doc.path) ||
-        (doc.sides && !metadata.isUpToDate(side, doc))
+        (doc.sides &&
+          doc.sides[otherSide(side)] &&
+          !metadata.isUpToDate(side, doc))
       ) {
         log.warn(
           { path: folder.path },
@@ -694,7 +695,10 @@ class Merge {
       .value()
     const reusingRevs = uniqResultsById.filter(this.isReusingRev)
     for (const { id, rev } of reusingRevs) {
-      const doc = _.find(docs, doc => !doc._rev && doc._id === id)
+      const doc = _.find(
+        docs,
+        doc => doc._id === id && !doc._rev && !doc.sides[otherSide(side)]
+      )
       if (doc) {
         fixedDocs.push(this.fixSide({ side, rev, doc }))
       }
@@ -713,7 +717,7 @@ class Merge {
     log.debug({ side, result, doc }, 'fixSideInPouch')
     const { rev } = result
 
-    if (!doc._rev && this.isReusingRev(result)) {
+    if (!doc._rev && !doc.sides[otherSide(side)] && this.isReusingRev(result)) {
       const fixedDoc = this.fixSide({ side, rev, doc })
       return this.pouch.put(fixedDoc)
     }
@@ -726,16 +730,13 @@ class Merge {
   fixSide(
     { side, rev, doc } /*: { side: SideName, rev: string, doc: Metadata } */
   ) /*: Metadata */ {
-    return _.defaults(
-      {
-        _rev: rev,
-        sides: _.defaults(
-          { [side]: metadata.extractRevNumber({ _rev: rev }) + 1 },
-          doc.sides
-        )
-      },
-      doc
-    )
+    return {
+      ...doc,
+      _rev: rev,
+      sides: {
+        [side]: doc.sides[side] + metadata.extractRevNumber({ _rev: rev })
+      }
+    }
   }
 
   async migrateFileid(

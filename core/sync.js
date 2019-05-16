@@ -502,6 +502,13 @@ class Sync {
     }
   }
 
+  // FIXME:
+  // Que se passe-t-il si :
+  // doc: { local: 3, remote: 2 }
+  // updateRevs(doc) → doc: { local: 4, remote: 4 }
+  // et unsynced: { local: 2, remote: 3 }
+  // ???
+
   // Update rev numbers for both local and remote sides
   async updateRevs(
     doc /*: Metadata */,
@@ -520,8 +527,11 @@ class Sync {
         await this.pouch.put({
           ...unsynced,
           sides: {
-            [side]: metadata.extractRevNumber(doc) + 1,
-            [other]: unsynced.sides[other] + 1
+            [side]: doc.sides[side],
+            [other]:
+              doc.sides[side] +
+              (unsynced.sides[other] - unsynced.sides[side]) -
+              1
           }
         })
       } else {

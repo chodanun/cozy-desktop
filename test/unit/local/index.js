@@ -21,8 +21,8 @@ describe('Local', function() {
   let builders, syncDir
 
   before('instanciate config', configHelpers.createConfig)
-  before('instanciate pouch', pouchHelpers.createDatabase)
-  before('instanciate local', function() {
+  beforeEach('instanciate pouch', pouchHelpers.createDatabase)
+  beforeEach('instanciate local', function() {
     this.prep = {}
     this.events = {}
     this.local = new Local(this)
@@ -30,7 +30,7 @@ describe('Local', function() {
     builders = new Builders({ pouch: this.pouch })
     syncDir = new ContextDir(this.syncPath)
   })
-  after('clean pouch', pouchHelpers.cleanDatabase)
+  afterEach('clean pouch', pouchHelpers.cleanDatabase)
   after('clean config directory', configHelpers.cleanConfig)
 
   describe('constructor', function() {
@@ -177,29 +177,68 @@ describe('Local', function() {
     })
   })
 
-  describe('fileExistsLocally', () =>
-    it('checks file existence as a binary in the db and on disk', async function() {
-      let filePath = path.resolve(this.syncPath, 'folder', 'testfile')
-      let exist = await this.local.fileExistsLocallyAsync('deadcafe')
-      exist.should.not.be.ok()
-      fse.ensureFileSync(filePath)
-      let doc = {
-        _id: 'folder/testfile',
-        path: 'folder/testfile',
-        docType: 'file',
-        md5sum: 'deadcafe',
-        sides: {
-          local: 1
-        }
+  describe('fileExistsLocally', () => {
+    const md5sum = 'deadcafe'
+    const doc = {
+      _id: 'folder/testfile',
+      path: 'folder/testfile',
+      docType: 'file',
+      md5sum,
+      sides: {
+        local: 1
       }
-      this.pouch.db.put(doc)
-      exist = await this.local.fileExistsLocallyAsync('deadcafe')
-      exist.should.be.equal(filePath)
-    }))
+    }
+
+    let filePath
+    beforeEach(function() {
+      filePath = path.resolve(this.syncPath, 'folder', 'testfile')
+      if (fse.pathExistsSync(filePath)) fse.unlinkSync(filePath)
+    })
+
+    it('returns the path of a file with the given checksum existing on disk and in pouch', async function() {
+      should(await this.local.fileExistsLocallyAsync(md5sum)).be.false()
+
+      fse.ensureFileSync(filePath)
+      await this.pouch.db.put(doc)
+
+      should(await this.local.fileExistsLocallyAsync(md5sum)).equal(filePath)
+    })
+
+    it('returns undefined if no files with the given checksum can be found on disk', async function() {
+      should(await this.local.fileExistsLocallyAsync(md5sum)).be.false()
+
+      await this.pouch.db.put(doc)
+
+      should(await this.local.fileExistsLocallyAsync(md5sum)).be.undefined()
+    })
+
+    it('returns false if no files with the given checksum can be found in pouch', async function() {
+      should(await this.local.fileExistsLocallyAsync(md5sum)).be.false()
+
+      fse.ensureFileSync(filePath)
+
+      should(await this.local.fileExistsLocallyAsync(md5sum)).be.false()
+    })
+
+    it('returns false if a file with the given checksum was deleted in pouch', async function() {
+      should(await this.local.fileExistsLocallyAsync(md5sum)).be.false()
+
+      fse.ensureFileSync(filePath)
+      await this.pouch.db.put({
+        ...doc,
+        _deleted: true
+      })
+
+      should(await this.local.fileExistsLocallyAsync(md5sum)).be.false()
+    })
+  })
 
   describe('addFile', function() {
-    it('creates the file by downloading it', async function() {
+    beforeEach(function() {
       this.events.emit = sinon.spy()
+    })
+
+    it('creates the file by downloading it', async function() {
       let doc = {
         path: 'files/file-from-remote',
         updated_at: new Date('2015-10-09T04:05:06Z'),
@@ -286,7 +325,6 @@ describe('Local', function() {
     })
 
     it('aborts when the download is incorrect', async function() {
-      this.events.emit = sinon.spy()
       let doc = {
         path: 'files/file-from-remote-2',
         updated_at: new Date('2015-10-09T04:05:16Z'),
@@ -409,7 +447,6 @@ describe('Local', function() {
 
   describe('overwriteFile', () => {
     it('writes the new content of a file', async function() {
-      this.events.emit = sinon.spy()
       let doc = {
         path: 'a-file-to-overwrite',
         docType: 'file',
@@ -632,6 +669,10 @@ describe('Local', function() {
   })
 
   describe('trash', () => {
+    beforeEach(function() {
+      this.events.emit = sinon.spy()
+    })
+
     it('deletes a file from the local filesystem', async function() {
       let doc = {
         _id: 'FILE-TO-DELETE',

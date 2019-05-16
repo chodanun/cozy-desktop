@@ -109,101 +109,109 @@ describe('Sync', function() {
   })
 
   describe('apply', function() {
-    it('does nothing for an ignored document', async function() {
-      let change = {
-        seq: 121,
-        doc: {
-          _id: 'ignored',
-          docType: 'folder',
-          sides: {
-            local: 1
-          }
-        }
-      }
-      this.sync.folderChanged = sinon.spy()
-      await this.sync.apply(change)
-      this.sync.folderChanged.called.should.be.false()
-    })
+    for (const docType in ['file', 'folder']) {
+      let metaBuilder
 
-    it('does nothing for an up-to-date document', async function() {
-      let change = {
-        seq: 122,
-        doc: {
-          _id: 'foo',
-          docType: 'folder',
-          sides: {
-            local: 1,
-            remote: 1
-          }
-        }
-      }
-      this.sync.folderChanged = sinon.spy()
-      await this.sync.apply(change)
-      this.sync.folderChanged.called.should.be.false()
-    })
-
-    it('trashes a locally deleted file or folder', async function() {
-      const change = {
-        seq: 145,
-        doc: {
-          _id: 'foo',
-          path: 'foo',
-          sides: {
-            local: 2,
-            remote: 1
-          },
-          trashed: true
-        }
-      }
-
-      this.sync.trashWithParentOrByItself = sinon.stub().resolves(true)
-      await this.sync.apply(change)
-      should(this.sync.trashWithParentOrByItself.called).be.true()
-    })
-
-    it('calls fileChanged for a file', async function() {
-      let change = {
-        seq: 123,
-        doc: {
-          _id: 'foo/bar',
-          docType: 'file',
-          md5sum: '0000000000000000000000000000000000000000',
-          sides: {
-            local: 3,
-            remote: 2
-          },
-          remote: { _id: 'XXX', _rev: '2-abc' }
-        }
-      }
-      await this.sync.apply(change)
-      const doc = await this.pouch.db.get(change.doc._id)
-      doc.should.have.properties({
-        _id: 'foo/bar',
-        docType: 'file',
-        sides: {
-          local: 1,
-          remote: 1
-        }
+      beforeEach(function() {
+        metaBuilder =
+          docType === 'file' ? builders.metafile() : builders.metadir()
       })
-    })
 
-    it('calls folderChanged for a folder', async function() {
-      let change = {
-        seq: 124,
-        doc: {
-          _id: 'foo/baz',
-          docType: 'folder',
-          tags: [],
-          sides: {
-            local: 1
+      it(`only increments the local change sequence for an ignored ${docType}`, async function() {
+        const change = {
+          seq: 121,
+          doc: {
+            _id: 'ignored',
+            path: 'ignored',
+            docType,
+            sides: {
+              local: 1
+            }
           }
         }
-      }
-      await this.sync.apply(change)
-      const seq = await this.pouch.getLocalSeqAsync()
-      seq.should.equal(124)
-    })
 
+        const applyDoc = sinon.stub(this.sync, 'applyDoc')
+        await this.sync.apply(change)
+        should(applyDoc).not.have.been.called()
+        const seq = await this.pouch.getLocalSeqAsync()
+        seq.should.equal(121)
+      })
+
+      it(`only increments the local change sequence for an up-to-date ${docType}`, async function() {
+        const doc = await metaBuilder.upToDate().create()
+        const change = { seq: 122, doc }
+
+        const applyDoc = sinon.stub(this.sync, 'applyDoc')
+        await this.sync.apply(change)
+        should(applyDoc).not.have.been.called()
+        const seq = await this.pouch.getLocalSeqAsync()
+        seq.should.equal(122)
+      })
+
+      it(`calls trashWithParentOrByItself for a locally deleted ${docType}`, async function() {
+        const doc = await metaBuilder
+          .path('foo')
+          .sides({ local: 1, remote: 1 })
+          .create()
+        const change = {
+          seq: 145,
+          doc: _.defaultsDeep(
+            {
+              sides: { local: 2 },
+              trashed: true
+            },
+            doc
+          )
+        }
+
+        const trashWithParentOrByItself = sinon
+          .stub(this.sync, 'trashWithParentOrByItself')
+          .resolves(true)
+        await this.sync.apply(change)
+        should(trashWithParentOrByItself).have.been.calledWith(change.doc)
+        const seq = await this.pouch.getLocalSeqAsync()
+        seq.should.equal(145)
+      })
+
+      it(`calls applyDoc for a modified ${docType}`, async function() {
+        const doc = await metaBuilder
+          .path('foo/bar')
+          .sides({ local: 2, remote: 2 })
+          .create()
+        let change = {
+          seq: 123,
+          doc: _.defaultsDeep(
+            {
+              sides: { local: 3 }
+            },
+            doc
+          )
+        }
+
+        const applyDoc = sinon.stub(this.sync, 'applyDoc')
+        await this.sync.apply(change)
+        should(applyDoc).have.been.calledWith(change.doc)
+        const seq = await this.pouch.getLocalSeqAsync()
+        seq.should.equal(123)
+      })
+
+      it(`calls applyDoc for a created ${docType}`, async function() {
+        const doc = metaBuilder
+          .path('foo/baz')
+          .sides({ local: 1 })
+          .build()
+        const change = { seq: 124, doc }
+
+        const applyDoc = sinon.stub(this.sync, 'applyDoc')
+        await this.sync.apply(change)
+        should(applyDoc).have.been.calledWith(change.doc)
+        const seq = await this.pouch.getLocalSeqAsync()
+        seq.should.equal(124)
+      })
+    }
+  })
+
+  describe('applyDoc', function() {
     it('calls addFileAsync for an added file', async function() {
       let doc = {
         _id: 'foo/bar',
@@ -534,14 +542,11 @@ describe('Sync', function() {
 
   describe('updateErrors', function() {
     it('retries on first local -> remote sync error', async function() {
-      let doc = {
-        _id: 'first/failure',
-        sides: {
-          local: 1
-        }
-      }
-      const infos = await this.pouch.db.put(doc)
-      doc._rev = infos.rev
+      const doc = await builders
+        .metadata()
+        .path('first/failure')
+        .sides({ local: 1 })
+        .create()
 
       await this.sync.updateErrors({ doc }, 'remote')
 
@@ -549,49 +554,37 @@ describe('Sync', function() {
       should(actual.errors).equal(1)
       should(actual._rev).not.equal(doc._rev)
       should(actual.sides).deepEqual({ local: 2 })
-      should(metadata.isUpToDate('local', actual)).be.true()
     })
 
     it('retries on second remote -> local sync error', async function() {
-      let doc = {
-        _id: 'second/failure',
-        errors: 1,
-        sides: {
-          // XXX: Use dumb values so we don't need to save Pouch doc multiple
-          //      times to get a matching rev.
-          local: 0,
-          remote: 2
-        }
-      }
-      let infos = await this.pouch.db.put(doc)
-      doc._rev = infos.rev
-      infos = await this.pouch.db.put(doc)
-      doc._rev = infos.rev
+      const doc = await builders
+        .metadata()
+        .path('second/failure')
+        .sides({ remote: 2 })
+        .errors(1)
+        .create()
 
       await this.sync.updateErrors({ doc }, 'local')
 
       const actual = await this.pouch.db.get(doc._id)
       should(actual.errors).equal(2)
       should(actual._rev).not.equal(doc._rev)
-      should(actual.sides).deepEqual({ local: 0, remote: 3 })
-      should(metadata.isUpToDate('remote', actual)).be.true()
+      should(actual.sides).deepEqual({ remote: 3 })
     })
 
     it('stops retrying after 3 errors', async function() {
-      let doc = {
-        _id: 'third/failure',
-        errors: 3,
-        sides: {
-          remote: 1
-        }
-      }
-      const infos = await this.pouch.db.put(doc)
-      doc._rev = infos.rev
+      const doc = await builders
+        .metadata()
+        .path('second/failure')
+        .sides({ remote: 1 })
+        .errors(3)
+        .create()
+
       await this.sync.updateErrors({ doc }, 'local')
+
       const actual = await this.pouch.db.get(doc._id)
-      actual.errors.should.equal(3)
-      actual._rev.should.equal(doc._rev)
-      should(metadata.isUpToDate('remote', actual)).be.true()
+      should(actual.errors).equal(3)
+      should(actual._rev).equal(doc._rev)
     })
   })
 

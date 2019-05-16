@@ -33,6 +33,7 @@ const { Ignore } = require('../../core/ignore')
 const { FILES_DOCTYPE } = require('../../core/remote/constants')
 const timestamp = require('../../core/timestamp')
 const stater = require('../../core/local/stater')
+const { otherSide } = require('../../core/side')
 
 const { platform } = process
 
@@ -284,34 +285,51 @@ describe('metadata', function() {
     })
   })
 
-  describe('isUpToDate', () => {
-    it('is false when the given side is undefined in doc', function() {
-      const doc = builders
-        .metafile()
-        .rev('1-0123456')
-        .sides({ remote: 1 })
-        .build()
-      should(metadata.isUpToDate('local', doc)).be.false()
-    })
+  for (const side of ['local', 'remote']) {
+    const other = otherSide(side)
 
-    it('is true when the given side equals the short rev in doc', () => {
-      const doc = builders
-        .metafile()
-        .rev('2-0123456')
-        .sides({ remote: 1, local: 2 })
-        .build()
-      should(metadata.isUpToDate('local', doc)).be.true()
-    })
+    describe(`isUpToDate(${side}, doc)`, () => {
+      it(`is false when side ${side} is undefined in doc`, function() {
+        const doc = builders
+          .metafile()
+          .sides({ [other]: 1 })
+          .build()
+        should(metadata.isUpToDate(side, doc)).be.false()
+      })
 
-    it('is false when the given side is lower than the short rev in doc', () => {
-      const doc = builders
-        .metafile()
-        .rev('3-0123456')
-        .sides({ remote: 3, local: 2 })
-        .build()
-      should(metadata.isUpToDate('local', doc)).be.false()
+      it(`is true when side ${other} is undefined in doc`, function() {
+        const doc = builders
+          .metafile()
+          .sides({ [side]: 1 })
+          .build()
+        should(metadata.isUpToDate(side, doc)).be.true()
+      })
+
+      it(`is true when side ${side} equals side ${other} in doc`, () => {
+        const doc = builders
+          .metafile()
+          .sides({ [side]: 2, [other]: 2 })
+          .build()
+        should(metadata.isUpToDate(side, doc)).be.true()
+      })
+
+      it(`is false when side ${side} is lower than side ${other} in doc`, () => {
+        const doc = builders
+          .metafile()
+          .sides({ [side]: 2, [other]: 3 })
+          .build()
+        should(metadata.isUpToDate(side, doc)).be.false()
+      })
+
+      it(`is true when side ${side} is greater than side ${other} in doc`, () => {
+        const doc = builders
+          .metafile()
+          .sides({ [side]: 3, [other]: 2 })
+          .build()
+        should(metadata.isUpToDate(side, doc)).be.true()
+      })
     })
-  })
+  }
 
   describe('assignMaxDate', () => {
     it('assigns the previous timestamp to the doc when it is more recent than the current one to prevent updated_at < created_at errors on remote sync', () => {
@@ -781,14 +799,13 @@ describe('metadata', function() {
         should(doc).have.properties({ sides: { local: 1 } })
       })
 
-      it(`increments the side from the _rev of an already existing ${kind}`, async function() {
+      it(`increments the side of an already existing ${kind}`, async function() {
         const prev = metadata[`build${kind}`](path, stats)
         prev.sides = { local: 3, remote: 5 }
-        prev._rev = '5-0123'
         const doc = metadata[`build${kind}`](path, stats)
 
         markSide('local', doc, prev)
-        should(doc).have.properties({ sides: { local: 6, remote: 5 } })
+        should(doc).have.properties({ sides: { local: 4, remote: 5 } })
       })
     }
   })

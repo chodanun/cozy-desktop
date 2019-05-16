@@ -208,6 +208,15 @@ module.exports = class BaseMetadataBuilder {
     return this
   }
 
+  errors(count /*: number */) /*: this */ {
+    if (count === 0) {
+      delete this.doc.errors
+    } else {
+      this.doc.errors = count
+    }
+    return this
+  }
+
   build() /*: Metadata */ {
     // Don't detect incompatibilities according to syncPath for test data, to
     // prevent environment related failures.
