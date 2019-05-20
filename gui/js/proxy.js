@@ -132,6 +132,9 @@ const setup = (app, config, session, userAgent, doneSetup) => {
     } else {
       options = Object.assign({}, options)
     }
+    if (options.host.endsWith('.mycozy.cloud')) {
+      options.servername = 'cozycloud.cc'
+    }
     options.agent = options.agent || https.globalAgent
     return originalHttpsRequest.call(https, options, cb)
   }
